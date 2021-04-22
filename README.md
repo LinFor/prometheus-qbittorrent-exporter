@@ -2,6 +2,11 @@
 
 A prometheus exporter for qBitorrent. Get metrics from a server and offers them in a prometheus format.
 
+## Build image
+
+```bash
+docker-compose build
+```
 
 ## How to use it
 

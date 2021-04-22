@@ -1,0 +1,6 @@
+version: '2.4'
+
+services:
+  qbittorrent-exporter:
+    image: pingwin/qbittorrent-exporter:test
+    build: .
