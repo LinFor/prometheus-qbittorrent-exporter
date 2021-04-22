@@ -13,8 +13,7 @@ from pythonjsonlogger import jsonlogger
 
 # Enable dumps on stderr in case of segfault
 faulthandler.enable()
-logger = None
-
+logger = logging.getLogger()
 
 class QbittorrentMetricsCollector():
     TORRENT_STATUSES = [
@@ -61,7 +60,10 @@ class QbittorrentMetricsCollector():
     def get_qbittorrent_metrics(self):
         metrics = []
         metrics.extend(self.get_qbittorrent_status_metrics())
+        metrics.extend(self.get_qbittorrent_sync_main_metrics())
         metrics.extend(self.get_qbittorrent_torrent_tags_metrics())
+        metrics.extend(self.get_qbittorrent_torrents_metrics())
+        metrics.extend(self.get_qbittorrent_peers_metrics())
 
         return metrics
 
@@ -111,6 +113,60 @@ class QbittorrentMetricsCollector():
                 "type": "counter"
             },
         ]
+    
+    def get_qbittorrent_sync_main_metrics(self):
+        try:
+            sync_main_response = self.client.sync_maindata()
+        except Exception as e:
+            logger.error(f"Couldn't fetch sync maindata: {e}")
+            return []
+        
+        if not sync_main_response:
+            return []
+
+        server_state = sync_main_response["server_state"]
+        if not server_state:
+            return []
+
+        return [
+            {
+                "name": f"{self.config['metrics_prefix']}_average_time_queue",
+                "value": server_state["average_time_queue"],
+                "help": "Average disk job time in ms",
+                "type": "gauge"
+            },
+            {
+                "name": f"{self.config['metrics_prefix']}_read_cache_hits",
+                "value": server_state["read_cache_hits"],
+                "help": "Read cache hits in percent",
+                "type": "gauge"
+            },
+            {
+                "name": f"{self.config['metrics_prefix']}_total_buffers_size",
+                "value": server_state["total_buffers_size"],
+                "help": "Total buffer size in bytes",
+                "type": "gauge"
+            },
+            {
+                "name": f"{self.config['metrics_prefix']}_total_peer_connections",
+                "value": server_state["total_peer_connections"],
+                "help": "Total peer connections",
+                "type": "gauge"
+            },
+            {
+                "name": f"{self.config['metrics_prefix']}_total_wasted",
+                "value": server_state["total_wasted_session"],
+                "help": "Total wasted in bytes",
+                "type": "counter"
+            },
+            {
+                "name": f"{self.config['metrics_prefix']}_write_cache_overload",
+                "value": server_state["write_cache_overload"],
+                "help": "Write cache overload in percent",
+                "type": "gauge"
+            },
+        ]
+
 
     def get_qbittorrent_torrent_tags_metrics(self):
         try:
@@ -144,6 +200,235 @@ class QbittorrentMetricsCollector():
 
         return metrics
 
+    def get_qbittorrent_torrents_metrics(self):
+        if not self.torrents:
+            return []
+
+        metrics = []
+        for torrent in self.torrents:
+            metrics.extend([
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_added_on",
+                    "value": torrent["added_on"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Time (Unix Epoch) when the torrent was added to the client",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_availability",
+                    "value": torrent["availability"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Percentage of file pieces currently available",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_downloaded",
+                    "value": torrent["downloaded"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Amount of data downloaded",
+                    "type": "counter"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_num_complete",
+                    "value": torrent["num_complete"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Number of seeds in the swarm",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_num_incomplete",
+                    "value": torrent["num_incomplete"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Number of leechers in the swarm",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_num_leechs",
+                    "value": torrent["num_leechs"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Number of leechers connected to",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_num_seeds",
+                    "value": torrent["num_seeds"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Number of seeds connected to",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_ratio",
+                    "value": torrent["ratio"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Torrent share ratio. Max ratio value: 9999.",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_seeding_time",
+                    "value": torrent["seeding_time"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Torrent elapsed time while complete (seconds)",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_size",
+                    "value": torrent["size"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Total size (bytes) of files selected for download",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_total_size",
+                    "value": torrent["total_size"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Total size (bytes) of all file in this torrent (including unselected ones)",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_time_active",
+                    "value": torrent["time_active"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Total active time (seconds)",
+                    "type": "gauge"
+                },
+                {
+                    "name": f"{self.config['metrics_prefix']}_torrents_info_uploaded",
+                    "value": torrent["uploaded"],
+                    "labels": {
+                        "name": torrent["name"],
+                        "category": torrent["category"],
+                        "hash": torrent["hash"]
+                    },
+                    "help": f"Amount of data uploaded",
+                    "type": "counter"
+                },
+            ])
+
+        return metrics
+
+    def get_qbittorrent_peers_metrics(self):
+        if not self.torrents:
+            return []
+
+        metrics = []
+        for torrent in self.torrents:
+            try:
+                torrent_peers = self.client.sync_torrent_peers(torrent_hash=torrent["hash"])
+            except Exception as e:
+                logger.error(f"Couldn't fetch torrent peers ({torrent['hash']}): {e}")
+                continue
+
+            peers = torrent_peers["peers"]
+            if not peers:
+                continue
+
+            for peer in peers.values():
+                metrics.extend([
+                    {
+                        "name": f"{self.config['metrics_prefix']}_peers_downloaded",
+                        "value": peer["downloaded"],
+                        "labels": {
+                            "torrent_name": torrent["name"],
+                            "torrent_hash": torrent["hash"],
+                            "country": peer["country"],
+                            "country_code": peer["country_code"],
+                            "ip": peer["ip"],
+                            "port": str(peer["port"])
+                        },
+                        "help": f"Amount of data downloaded by peer",
+                        "type": "counter"
+                    },
+                    {
+                        "name": f"{self.config['metrics_prefix']}_peers_uploaded",
+                        "value": peer["uploaded"],
+                        "labels": {
+                            "torrent_name": torrent["name"],
+                            "torrent_hash": torrent["hash"],
+                            "country": peer["country"],
+                            "country_code": peer["country_code"],
+                            "ip": peer["ip"],
+                            "port": str(peer["port"])
+                        },
+                        "help": f"Amount of data uploaded by peer",
+                        "type": "counter"
+                    },
+                    {
+                        "name": f"{self.config['metrics_prefix']}_peers_progress",
+                        "value": peer["progress"],
+                        "labels": {
+                            "torrent_name": torrent["name"],
+                            "torrent_hash": torrent["hash"],
+                            "country": peer["country"],
+                            "country_code": peer["country_code"],
+                            "ip": peer["ip"],
+                            "port": str(peer["port"])
+                        },
+                        "type": "gauge"
+                    },
+                    {
+                        "name": f"{self.config['metrics_prefix']}_peers_relevance",
+                        "value": peer["relevance"],
+                        "labels": {
+                            "torrent_name": torrent["name"],
+                            "torrent_hash": torrent["hash"],
+                            "country": peer["country"],
+                            "country_code": peer["country_code"],
+                            "ip": peer["ip"],
+                            "port": str(peer["port"])
+                        },
+                        "type": "gauge"
+                    },
+            ])
+
+        return metrics
 
 class SignalHandler():
     def __init__(self):
